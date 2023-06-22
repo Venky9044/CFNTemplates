@@ -1,0 +1,93 @@
+Resources:
+
+  ConfigPermissionToCallLambda: 
+    Type: AWS::Lambda::Permission
+    Properties: 
+      FunctionName: 
+        Fn::GetAtt: 
+           - SecurityGroupPortRuleLambda
+           - Arn
+      Action: "lambda:InvokeFunction"
+      Principal: "config.amazonaws.com"
+      SourceAccount: !Ref 'AWS::AccountId'
+
+  SecurityGroupPortRuleLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: SecurityGroupPortRuleLambda
+      Runtime: python3.8
+      Handler: index.lambda_handler
+      Timeout: 60
+      Role: !GetAtt SecurityGroupPortRuleLambdaRole.Arn
+      Code:
+        ZipFile: |
+          import boto3
+          import json
+
+          def lambda_handler(event, context):
+              # Extract the security group details from the AWS Config event
+              config_item = event['configurationItem']
+              security_group_id = config_item['resourceId']
+              security_group_name = config_item['configuration']['groupName']
+              ip_permissions = config_item['configuration']['ipPermissions']
+
+              open_ports = []
+              for permission in ip_permissions:
+                  if (permission.get('fromPort') == 22 or permission.get('fromPort') == 3389) and permission.get('ipRanges') == [{'cidrIp': '0.0.0.0/0'}]:
+                      open_ports.append(permission.get('fromPort'))
+
+              # Publish a notification if open ports are found
+              if open_ports:
+                  sns_topic_arn = '<email address>'  # Replace with the actual SNS topic ARN
+                  sns_client = boto3.client('sns')
+                  message = f"Security Group '{security_group_name}' ({security_group_id}) has open ports: {open_ports}"
+                  sns_client.publish(TopicArn=sns_topic_arn, Message=message)
+
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps('Notification sent successfully')
+              }
+
+  SecurityGroupPortRuleLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: SecurityGroupPortRuleLambdaRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: CustomConfigAndSNSPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - config:*
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource: '*'
+
+  SecurityGroupPortRule:
+    DependsOn: ConfigPermissionToCallLambda
+    Type: AWS::Config::ConfigRule
+    Properties:
+      ConfigRuleName: SecurityGroupPortRule
+      Description: Checks for security groups with open port 22 or 3389
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::EC2::SecurityGroup
+      Source:
+        Owner: CUSTOM_LAMBDA
+        SourceDetails: 
+           - 
+              EventSource: "aws.config"
+              MessageType: "ConfigurationItemChangeNotification"
+        SourceIdentifier: !GetAtt SecurityGroupPortRuleLambda.Arn
