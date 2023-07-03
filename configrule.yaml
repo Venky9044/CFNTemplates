@@ -1,4 +1,20 @@
+Parameters:
+  EmailAddress:
+    Type: String
+
 Resources:
+
+  SecurityGroupPortRuleSNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: SecurityGroupPortRuleTopic
+
+  SecurityGroupPortRuleSNSSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Endpoint: !Ref EmailAddress
+      Protocol: email
+      TopicArn: !Ref SecurityGroupPortRuleSNSTopic
 
   ConfigPermissionToCallLambda: 
     Type: AWS::Lambda::Permission
@@ -19,10 +35,15 @@ Resources:
       Handler: index.lambda_handler
       Timeout: 60
       Role: !GetAtt SecurityGroupPortRuleLambdaRole.Arn
+      Variables:
+        SNS_TOPIC_ARN: !GetAtt SecurityGroupPortRuleSNSTopic.Arn
       Code:
         ZipFile: |
           import boto3
           import json
+          import os
+
+          sns_topic_arn = os.environ['SNS_TOPIC_ARN']
 
           def lambda_handler(event, context):
               # Extract the security group details from the AWS Config event
@@ -37,12 +58,9 @@ Resources:
                       open_ports.append(permission.get('fromPort'))
 
               # Publish a notification if open ports are found
-              if open_ports:
-                  sns_topic_arn = '<email address>'  # Replace with the actual SNS topic ARN
                   sns_client = boto3.client('sns')
                   message = f"Security Group '{security_group_name}' ({security_group_id}) has open ports: {open_ports}"
                   sns_client.publish(TopicArn=sns_topic_arn, Message=message)
-
               return {
                   'statusCode': 200,
                   'body': json.dumps('Notification sent successfully')
