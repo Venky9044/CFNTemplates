@@ -1,0 +1,111 @@
+Parameters:
+  EmailAddress:
+    Type: String
+    Default: <your email address>
+
+Resources:
+
+  SecurityGroupAlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: Security Group Alert Topic
+
+  EmailSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Endpoint: !Ref EmailAddress
+      Protocol: email
+      TopicArn: !Ref SecurityGroupAlertTopic
+
+  SecurityGroupScanFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: SecurityGroupScanFunction
+      Runtime: python3.8
+      Handler: index.handler
+      Timeout: 300
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          SNS_TOPIC_ARN: !Ref SecurityGroupAlertTopic
+      Code:
+        ZipFile: |
+          import os
+          import boto3
+
+          def handler(event, context):
+              sns_topic_arn = os.environ['SNS_TOPIC_ARN']
+              ec2 = boto3.client('ec2')
+              sns = boto3.client('sns')
+              response = ec2.describe_security_groups()
+
+              for group in response['SecurityGroups']:
+                  group_id = group['GroupId']
+                  ip_permissions = group['IpPermissions']
+
+                  for permission in ip_permissions:
+                      if 'FromPort' in permission and 'ToPort' in permission:
+                          from_port = permission['FromPort']
+                          to_port = permission['ToPort']
+                          ip_ranges = permission.get('IpRanges', [])
+
+                          if (from_port == 22 or to_port == 22 or from_port == 3389 or to_port == 3389):
+                              for ip_range in ip_ranges:
+                                  if ip_range['CidrIp'] == '0.0.0.0/0':
+                                      message = f"Security Group {group_id} has ports 22 and/or 3389 open to the internet"
+                                      sns.publish(TopicArn=sns_topic_arn, Message=message)
+                                      break
+
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: LambdaExecutionRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: EC2DescribePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeSecurityGroups
+                Resource: '*'
+        - PolicyName: SNSTopicPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sns:*
+                Resource: '*'
+
+  LambdaFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref SecurityGroupScanFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt SecurityGroupScanEvent.Arn
+
+  SecurityGroupScanEvent:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: SecurityGroupScanEvent
+      ScheduleExpression: rate(24 hours)
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt SecurityGroupScanFunction.Arn
+          Id: SecurityGroupScanEventTarget
+
+Outputs:
+  SecurityGroupAlertTopicARN:
+    Value: !Ref SecurityGroupAlertTopic
+    ExportName: SecurityGroupAlertTopicARN
