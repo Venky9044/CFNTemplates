@@ -37,7 +37,7 @@ Resources:
       Role: !GetAtt SecurityGroupPortRuleLambdaRole.Arn
       Environment:
         Variables:
-          SNS_TOPIC_ARN: !GetAtt SecurityGroupPortRuleSNSTopic.Arn
+          SNS_TOPIC_ARN: !GetAtt SecurityGroupPortRuleSNSTopic.TopicArn
       Code:
         ZipFile: |
           import boto3
