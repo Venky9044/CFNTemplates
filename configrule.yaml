@@ -47,25 +47,32 @@ Resources:
           sns_topic_arn = os.environ['SNS_TOPIC_ARN']
 
           def lambda_handler(event, context):
-              # Extract the security group details from the AWS Config event
-              config_item = event['configurationItem']
-              security_group_id = config_item['resourceId']
-              security_group_name = config_item['configuration']['groupName']
-              ip_permissions = config_item['configuration']['ipPermissions']
+              try:
+                  # Extract the security group details from the AWS Config event
+                  config_item = event['configuration']
+                  security_group_id = config_item['resourceId']
+                  security_group_name = config_item['groupName']
+                  ip_permissions = config_item['configuration']['ipPermissions']
 
-              open_ports = []
-              for permission in ip_permissions:
-                  if (permission.get('fromPort') == 22 or permission.get('fromPort') == 3389) and permission.get('ipRanges') == [{'cidrIp': '0.0.0.0/0'}]:
-                      open_ports.append(permission.get('fromPort'))
+                  open_ports = []
+                  for permission in ip_permissions:
+                      if (permission.get('fromPort') == 22 or permission.get('fromPort') == 3389) and permission.get('ipRanges') == [{'cidrIp': '0.0.0.0/0'}]:
+                          open_ports.append(permission.get('fromPort'))
 
-              # Publish a notification if open ports are found
-                  sns_client = boto3.client('sns')
-                  message = f"Security Group '{security_group_name}' ({security_group_id}) has open ports: {open_ports}"
-                  sns_client.publish(TopicArn=sns_topic_arn, Message=message)
-              return {
-                  'statusCode': 200,
-                  'body': json.dumps('Notification sent successfully')
-              }
+                  # Publish a notification if open ports are found
+                      sns_client = boto3.client('sns')
+                      message = f"Security Group '{security_group_name}' ({security_group_id}) has open ports: {open_ports}"
+                      sns_client.publish(TopicArn=sns_topic_arn, Message=message)
+                  return {
+                      'statusCode': 200,
+                      'body': json.dumps('Notification sent successfully')
+                  }
+              except Exception as e:
+                  # Handle any errors gracefully
+                  return {
+                      'statusCode': 500,
+                      'body': json.dumps(f'Error: {str(e)}')
+                  }
 
   SecurityGroupPortRuleLambdaRole:
     Type: AWS::IAM::Role
