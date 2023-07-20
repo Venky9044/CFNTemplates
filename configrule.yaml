@@ -35,8 +35,9 @@ Resources:
       Handler: index.lambda_handler
       Timeout: 60
       Role: !GetAtt SecurityGroupPortRuleLambdaRole.Arn
-      Variables:
-        SNS_TOPIC_ARN: !GetAtt SecurityGroupPortRuleSNSTopic.Arn
+      Environment:
+        Variables:
+          SNS_TOPIC_ARN: !GetAtt SecurityGroupPortRuleSNSTopic.Arn
       Code:
         ZipFile: |
           import boto3
