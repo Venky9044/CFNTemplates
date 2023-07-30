@@ -1,0 +1,49 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CloudFormation template for creating a Config rule to check security groups open to the internet.
+
+Parameters:
+  EmailAddress:
+    Description: Email address to subscribe to the SNS topic.
+    Type: String
+    Default: xyz@gmail.com
+
+Resources:
+
+  SNSTopic:
+    Type: AWS::SNS::Topic
+
+  EmailSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Protocol: email
+      TopicArn: !Ref SNSTopic
+      Endpoint: !Ref EmailAddress
+
+  SecurityGroupOpenToInternetConfigRule:
+    Type: AWS::Config::ConfigRule
+    Properties:
+      ConfigRuleName: SecurityGroupOpenToInternet
+      Description: Checks for security groups that are open to the internet.
+      InputParameters: '{"authorizedTcpPorts":"8080,443","authorizedUdpPorts":"8080,443"}'
+      Scope:
+        ComplianceResourceTypes:
+          - "AWS::EC2::SecurityGroup"
+      Source:
+        Owner: AWS
+        SourceIdentifier: VPC_SG_OPEN_ONLY_TO_AUTHORIZED_PORTS
+
+  ConfigRuleCloudWatchEvent:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: CloudWatch Events rule to trigger AWS Config rule evaluation.
+      EventPattern:
+        source:
+          - aws.config
+        detail-type:
+          - Config Rules Compliance Change
+        resources:
+          - !Sub "arn:aws:config:${AWS::Region}:${AWS::AccountId}:config-rule/SecurityGroupOpenToInternetConfigRule"
+      State: ENABLED
+      Targets:
+        - Arn: !Ref SNSTopic
+          Id: "TargetSNSTopic"
