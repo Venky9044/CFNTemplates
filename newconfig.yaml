@@ -32,6 +32,23 @@ Resources:
         Owner: AWS
         SourceIdentifier: VPC_SG_OPEN_ONLY_TO_AUTHORIZED_PORTS
 
+  SecurityGroupOpenToInternetRemediation:
+    Type: AWS::Config::RemediationConfiguration
+    Properties:
+      ConfigRuleName: !Ref SecurityGroupOpenToInternetConfigRule
+      TargetType: "SSM_DOCUMENT"
+      TargetVersion: "1"
+      Automatic: true
+      MaximumAutomaticAttempts: 5
+      RetryAttemptSeconds: 60
+      TargetId: "AWS-PublishSNSNotification"
+      Parameters: 
+        TopicArn:
+          StaticValue:
+            Values:
+              - !Ref SNSTopic
+      AssumeRoleArn: "arn:aws:iam::${AWS::AccountId}:AWSServiceRoleForConfig"
+
   ConfigRuleCloudWatchEvent:
     Type: AWS::Events::Rule
     Properties:

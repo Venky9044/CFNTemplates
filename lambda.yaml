@@ -1,7 +1,7 @@
 Parameters:
   EmailAddress:
     Type: String
-    Default: <your email address>
+    Default: xyz@gmail.com
 
 Resources:
 
@@ -104,8 +104,3 @@ Resources:
       Targets:
         - Arn: !GetAtt SecurityGroupScanFunction.Arn
           Id: SecurityGroupScanEventTarget
-
-Outputs:
-  SecurityGroupAlertTopicARN:
-    Value: !Ref SecurityGroupAlertTopic
-    ExportName: SecurityGroupAlertTopicARN
