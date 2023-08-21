@@ -1,0 +1,112 @@
+Resources:
+
+  ConfigRuleS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: venky9044-configrule-s3-bucket
+  
+  ConfigRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: AWSConfigRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - config.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ConfigPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetBucketAcl
+                  - s3:GetBucketPolicy
+                  - s3:ListBucket
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource: !GetAtt ConfigRuleS3Bucket.Arn
+        - PolicyName: SecurityGroupPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeSecurityGroups
+                  - ec2:DescribeNetworkInterfaces
+                Resource: '*'
+        - PolicyName: SSMPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ssm:*
+                Resource: '*'
+
+  AWSConfigRule:
+    Type: AWS::Config::ConfigRule
+    Properties:
+      ConfigRuleName: restricted-common-ports
+      Description: Checks whether the security group of EC2 instances allows unrestricted incoming TCP traffic to the specified ports.
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::EC2::SecurityGroup
+      Source:
+        Owner: AWS
+        SourceIdentifier: RESTRICTED_INCOMING_TRAFFIC
+      InputParameters:
+        blockedPort1: "22"
+        blockedPort2: "3389"
+      
+  RemediationConfigurations:
+    Type: AWS::Config::RemediationConfiguration
+    Properties:
+      ConfigRuleName: !Ref AWSConfigRule
+      TargetType: SSM_DOCUMENT
+      TargetId: AWS-DisablePublicAccessForSecurityGroup
+      TargetVersion: $LATEST
+      Parameters:
+        AutomationAssumeRole:
+          StaticValue:
+            Values:
+              - !GetAtt ConfigRole.Arn
+        GroupId:
+          StaticValue:
+            Values: 
+              - RESOURCE_ID
+        IpProtocol:
+          StaticValue:
+            Values:
+              - "-1"
+        CidrBlock:
+          StaticValue:
+            Values:
+              - "0.0.0.0/0"
+      ResourceType: AWS::EC2::SecurityGroup
+      Automatic: true
+      MaximumAutomaticAttempts: 10
+      RetryAttemptSeconds: 60
+
+  S3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ConfigRuleS3Bucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: s3:GetObject
+            Resource: !Join
+              - ""
+              - - "arn:aws:s3:::"
+                - !Ref ConfigRuleS3Bucket
+                - "/*"
+            Principal:
+              AWS: !GetAtt ConfigRole.Arn
