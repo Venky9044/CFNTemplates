@@ -1,9 +1,30 @@
+Parameters:
+  EmailAddress1:
+  Type: String
+
+  EmailAddress2:
+  Type: String
+
 Resources:
 
-  ConfigRuleS3Bucket:
-    Type: AWS::S3::Bucket
+  SNSTopic:
+    Type: AWS::SNS::Topic
     Properties:
-      BucketName: venky9044-configrule-s3-bucket
+      DisplayName: SNS-Topic-For-Config-Rule-Alerts
+
+  EmailSubscription1:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Protocol: email
+      TopicArn: !Ref SNSTopic
+      Endpoint: !Ref EmailAddress1
+
+  EmailSubscription2:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Protocol: email
+      TopicArn: !Ref SNSTopic
+      Endpoint: !Ref EmailAddress2
   
   ConfigRole:
     Type: AWS::IAM::Role
@@ -18,20 +39,6 @@ Resources:
                 - config.amazonaws.com
             Action: sts:AssumeRole
       Policies:
-        - PolicyName: ConfigPolicy
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - s3:GetBucketAcl
-                  - s3:GetBucketPolicy
-                  - s3:ListBucket
-                Resource: '*'
-              - Effect: Allow
-                Action:
-                  - s3:GetObject
-                Resource: !GetAtt ConfigRuleS3Bucket.Arn
         - PolicyName: SecurityGroupPolicy
           PolicyDocument:
             Version: '2012-10-17'
@@ -94,19 +101,28 @@ Resources:
       MaximumAutomaticAttempts: 10
       RetryAttemptSeconds: 60
 
-  S3BucketPolicy:
-    Type: AWS::S3::BucketPolicy
+  ConfigRuleCloudWatchEvent:
+    Type: AWS::Events::Rule
     Properties:
-      Bucket: !Ref ConfigRuleS3Bucket
-      PolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Action: s3:GetObject
-            Resource: !Join
-              - ""
-              - - "arn:aws:s3:::"
-                - !Ref ConfigRuleS3Bucket
-                - "/*"
-            Principal:
-              AWS: !GetAtt ConfigRole.Arn
+      Description: CloudWatch Events rule to trigger AWS Config rule evaluation.
+      EventPattern:
+        source:
+          - aws.config
+        detail-type:
+          - Config Rules Compliance Change
+        detail:
+          MessageType:
+            - ComplianceChangeNotification
+          ConfigRuleName:
+            - !Ref AWSConfigRule
+      State: ENABLED
+      Targets:
+        - Arn: !Ref SNSTopic
+          Id: "TargetSNSTopic"
+          InputTransformer:
+            InputPathsMap:
+              "awsRegion": "$.detail.awsRegion"
+              "complianceType": "$.detail.newEvaluationResult.complianceType"
+              "resourceId": "$.detail.resourceId"
+            InputTemplate: |
+              "The resource <resourceId> in region <awsRegion> had an inbound rule open to internet for port 22/3389 and is being automatically removed as per security guidelines"
