@@ -1,31 +1,36 @@
 AWSTemplateFormatVersion: '2010-09-09'
+Transform: 'AWS::Serverless-2016-10-31'
 Description: 'CloudFormation Template for RDS Instance with Multi AZ support and MS SQL Support'
 
 Parameters:
-  ApplicationName:
-    Type: String
-    Description: Name of the application this is used for
+  # ApplicationName:
+  #   Type: String
+  #   Description: Name of the application this is used for
     
   DBStorageSize: 
     Type: String
     Description: Initial Storage size of RDS
-  
+    Default: '20'
+
   DBBackupRetention:
     Type: String
     Description: Days for backup retention
+    Default: '7'
   
   DBMaxStorageSize:
     Type: String
     Description: Max Allocated Storage size of RDS
+    Default: '40'
   
   DBInstanceClass:
     Type: String
     Description: Instance Family for RDS
+    Default: 'db.m5.large'
   
   DBDeletionProtection: 
     Type: String
     Description: Delete Protection for RDS
-    Default: 'true'
+    Default: 'false'
   
   DBEngine:
     Type: String
@@ -35,10 +40,12 @@ Parameters:
     - sqlserver-ex
     - sqlserver-web
     - sqlserver-ee
+    Default: 'sqlserver-se'
   
   DBEngineVersion:
     Type: String
     Description: Choose a valud RDS Engine version
+    Default: '15.00.4316.3.v1'
 
   DBMonitoringInterval:
     Type: String
@@ -51,34 +58,42 @@ Parameters:
       - 15
       - 30
       - 60
+    Default: 0
+
   DBLicenseModel:
     Type: String
     Description: License model information for this DB instance.
+    Default: 'license-included'
 
   DBUsername:
-    Type: AWS::SSM::Parameter::Value<String>
+    Type: String
     Description: RDS Master username
-    NoEcho: true
+    Default: testuser
 
   DBMUltiAZ: 
     Type: String
     Description: Choose whether a DB is Multi AZ or not
+    Default: 'true'
 
   DBPort: 
     Type: String
     Description: Choose port the DB should be listening on
+    Default: '3306'
 
   DBBackupWindow: 
     Type: String
     Description: Windows to run backups in. Time format (UTC)
+    Default: '00:30-01:30'
   
   DBMaintenanceWindow: 
     Type: String
     Description: Windows to run minor maintenance in. Time format (UTC). URL - https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_UpgradeDBInstance.Maintenance.html#AdjustingTheMaintenanceWindow
-  
+    Default: 'Sun:20:30-Sun:21:30'
+
   DBStorageEncrpytion:
     Type: String
     Description: Allows to enable encryption of DB disks
+    Default: 'false'
 
   DBStorageType:
     Type: String
@@ -87,45 +102,47 @@ Parameters:
     - standard
     - gp2
     - io1
+    Default: 'gp2'
   
-  OperationHours:
-    Type: String
-    Description: Reduced Operation hours.
-    Default: AlwaysOn
+  # OperationHours:
+  #   Type: String
+  #   Description: Reduced Operation hours.
+  #   Default: AlwaysOn
   
-  TimeZone:
-    Type: String
-    Description: Timezone for DB. Support only for Microsoft SQL servers
-    Default: ''
+  # TimeZone:
+  #   Type: String
+  #   Description: Timezone for DB. Support only for Microsoft SQL servers
+  #   Default: ''
   
   SubnetA:
     Type: String
     Description: Subnet in AZ-A
+    Default: 'subnet-00f038dc67f6d9036'
   
   SubnetB:
     Type: String
     Description: Subnet in AZ-B
+    Default: 'subnet-0da0e858748d923f2'
   
   SubnetC:
     Type: String
     Description: Subnet in AZ-C
+    Default: 'subnet-0e3d0d214d9149441'
   
   InboundCIDRIP: 
     Type: String
-    Description: Mirvac Inbound CIDR
+    Description: Inbound CIDR
     Default: 10.0.0.0/8
 
   VPCID:
     Type: String
     Description: VPC the RDS will be deployed to
+    Default: 'vpc-0487f312737af70be'
   
   DBParameterGroupFamily:
     Description: Family of DB paramater group instance
     Type: String
-
-  MasterUserPassword:
-    Type: String
-    NoEcho: true
+    Default: 'sqlserver-se-15.0'
   
 Resources:
   DBClusterSecret:
@@ -134,37 +151,36 @@ Resources:
       Name: !Sub ${DBUsername}
       Description: !Sub 'A Secrets Manager secret for ${DBUsername}'
       GenerateSecretString:
-        SecretStringTemplate: !Sub >-
-          {"username": "${DBUsername}"}
-        GenerateStringKey: password
+        SecretStringTemplate: !Sub '{"username": "${DBUsername}"}'
+        GenerateStringKey: 'password'
         PasswordLength: 16
         ExcludeCharacters: "\"!#$%&'()*+,-./:;=>?@[]^_{|}~`\\"
-      Tags:
-        - Key: Name
-          Value: Master Username and Password for the RDS Aurora Cluster
-        - Key: Application
-          Value: !Ref TagApplication
-        - Key: ApplicationOwner
-          Value: !Ref TagApplicationOwner
-        - Key: Environment
-          Value: !Ref TagEnvironment
+      # Tags:
+      #   - Key: Name
+      #     Value: Master Username and Password for the RDS Aurora Cluster
+      #   - Key: Application
+      #     Value: !Ref TagApplication
+      #   - Key: ApplicationOwner
+      #     Value: !Ref TagApplicationOwner
+      #   - Key: Environment
+      #     Value: !Ref TagEnvironment
 
   DBClusterSecretRotationLambda:
     Type: AWS::Serverless::Application
     Properties:
       Location:
-        ApplicationId: 'arn:aws:serverlessrepo:us-east-1:297356227824:applications/SecretsManagerRDSPostgreSQLRotationSingleUser'
+        ApplicationId: 'arn:aws:serverlessrepo:us-east-1:297356227824:applications/SecretsManagerRDSSQLServerRotationMultiUser'
         SemanticVersion: 1.1.319
       Parameters:
         endpoint: !Sub 'https://secretsmanager.${AWS::Region}.amazonaws.com'
-        functionName: !Sub '${ApplicationName}-SecretsManagerRDSPostgreSQLRotationSingleUser'
+        functionName: testing-SecretsManagerRDSPostgreSQLRotationSingleUser
   
   DBClusterSecretRotationShedule:
     Type: AWS::SecretsManager::RotationSchedule
     DependsOn: DBClusterSecretRotationLambda
     Properties:
       SecretId: !Ref DBClusterSecret
-      RotationLambdaARN: !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${ApplicationName}-SecretsManagerRDSPostgreSQLRotationSingleUser'
+      RotationLambdaARN: !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:testing-SecretsManagerRDSPostgreSQLRotationSingleUser'
       RotationRules:
         AutomaticallyAfterDays: 365
 
@@ -175,36 +191,31 @@ Resources:
       AllowMajorVersionUpgrade: false
       AutoMinorVersionUpgrade: true
       BackupRetentionPeriod: !Ref DBBackupRetention
-      CopyTagsToSnapshot: true
+      # CopyTagsToSnapshot: true
       DBInstanceClass: !Ref DBInstanceClass
       DBParameterGroupName: !Ref DBInstanceParameterGroup
       DBSubnetGroupName: !Ref DBInstanceSubnetGroup
       DeletionProtection: !Ref DBDeletionProtection
-      EnableCloudwatchLogsExports: 
-        - agent
-        - error
       EnablePerformanceInsights: false
       Engine: !Ref DBEngine
       EngineVersion: !Ref DBEngineVersion
       LicenseModel: !Ref DBLicenseModel
       MasterUsername: !Ref DBUsername
-      MasterUserPassword: 
+      MasterUserPassword: !Join ['', ['{{resolve:secretsmanager:', !Ref DBClusterSecret, ':SecretString:password}}' ]]
       MaxAllocatedStorage: !Ref DBMaxStorageSize
       MonitoringInterval: !Ref DBMonitoringInterval
-      MonitoringRoleArn: !GetAtt DBMonitoringRole.Arn
       MultiAZ: true
       Port: !Ref DBPort
       PreferredBackupWindow: !Ref DBBackupWindow
       PreferredMaintenanceWindow: !Ref DBMaintenanceWindow
-      PubliclyAccessible: false
       StorageEncrypted: !Ref DBStorageEncrpytion
       StorageType: !Ref DBStorageType
-      Tags: 
-        - Key: Application
-          Value: !Ref ApplicationName
-        - Key: OperationalHours
-          Value: !Ref OperationHours
-      Timezone: !Ref TimeZone
+#       Tags: 
+#         - Key: Application
+#           Value: !Ref ApplicationName
+#         - Key: OperationalHours
+#           Value: !Ref OperationHours
+#       Timezone: !Ref TimeZone
       VPCSecurityGroups:
         - !Ref DBInstanceSecurityGroup
 
@@ -213,9 +224,9 @@ Resources:
     Properties: 
       Description: Parameter Group for RDS Instance
       Family: !Ref DBParameterGroupFamily
-      Tags: 
-        - Key: Application
-          Value: !Ref ApplicationName
+#       Tags: 
+#         - Key: Application
+#           Value: !Ref ApplicationName
 
   DBInstanceSubnetGroup: 
     Type: AWS::RDS::DBSubnetGroup
@@ -236,23 +247,6 @@ Resources:
         IpProtocol: tcp 
         ToPort: !Ref DBPort
       VpcId: !Ref VPCID 
-
-  DBMonitoringRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          -
-            Effect: "Allow"
-            Principal:
-              Service:
-                - "monitoring.rds.amazonaws.com"
-            Action:
-              - "sts:AssumeRole"
-      Path: "/"
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole
 
 Outputs:
   DBInstanceEndpoint:
