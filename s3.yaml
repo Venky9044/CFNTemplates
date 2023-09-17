@@ -2,7 +2,6 @@ Resources:
 
   MyS3Bucket:
     Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
     Properties:
-      BucketName: venky-ravi-testing-12345
-      VersioningConfiguration:
-        Status: Enabled
+      BucketName: testing-venky9044-bucket-for-cfn
