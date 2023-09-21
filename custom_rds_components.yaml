@@ -1,0 +1,323 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: 'AWS::Serverless-2016-10-31'
+Description: 'CloudFormation Template for RDS Instance with Multi AZ support and MS SQL Support'
+
+Parameters:
+
+  DBUsername:
+    Type: String
+    Default: 'TestUserForCustom'
+
+  DBPort: 
+    Type: String
+    Description: Choose port the DB should be listening on
+    Default: '3306'
+  
+  SubnetA:
+    Type: String
+    Description: Subnet in AZ-A
+    Default: 'subnet-00f038dc67f6d9036'
+  
+  SubnetB:
+    Type: String
+    Description: Subnet in AZ-B
+    Default: 'subnet-0da0e858748d923f2'
+  
+  SubnetC:
+    Type: String
+    Description: Subnet in AZ-C
+    Default: 'subnet-0e3d0d214d9149441'
+  
+  InboundCIDRIP: 
+    Type: String
+    Description: Inbound CIDR
+    Default: 10.0.0.0/8
+
+  VPCID:
+    Type: String
+    Description: VPC the RDS will be deployed to
+    Default: 'vpc-0487f312737af70be'
+  
+Resources:
+  DBClusterSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub ${DBUsername}
+      Description: !Sub 'A Secrets Manager secret for ${DBUsername}'
+      GenerateSecretString:
+        SecretStringTemplate: !Sub '{"username": "${DBUsername}"}'
+        GenerateStringKey: 'password'
+        PasswordLength: 16
+        ExcludeCharacters: "\"!#$%&'()*+,-./:;=>?@[]^_{|}~`\\"
+
+  DBClusterSecretRotationLambda:
+    Type: AWS::Serverless::Application
+    Properties:
+      Location:
+        ApplicationId: 'arn:aws:serverlessrepo:us-east-1:297356227824:applications/SecretsManagerRDSSQLServerRotationMultiUser'
+        SemanticVersion: 1.1.319
+      Parameters:
+        endpoint: !Sub 'https://secretsmanager.${AWS::Region}.amazonaws.com'
+        functionName: testing-SecretsManagerRDSPostgreSQLRotationSingleUser
+  
+  DBClusterSecretRotationShedule:
+    Type: AWS::SecretsManager::RotationSchedule
+    DependsOn: DBClusterSecretRotationLambda
+    Properties:
+      SecretId: !Ref DBClusterSecret
+      RotationLambdaARN: !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:testing-SecretsManagerRDSPostgreSQLRotationSingleUser'
+      RotationRules:
+        AutomaticallyAfterDays: 365
+
+  DBInstanceSubnetGroup: 
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: List Subnet Groupps
+      SubnetIds:
+        - !Ref SubnetA
+        - !Ref SubnetB
+        - !Ref SubnetC
+
+  DBInstanceSecurityGroup: 
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub ${AWS::StackName}-SG
+      SecurityGroupIngress:
+      - CidrIp: !Ref InboundCIDRIP
+        FromPort: !Ref DBPort
+        IpProtocol: tcp 
+        ToPort: !Ref DBPort
+      VpcId: !Ref VPCID 
+  
+  DBInstanceSecurityOutboundRule:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      IpProtocol: tcp
+      FromPort: 0
+      ToPort: 65535
+      CidrIp: 0.0.0.0/0
+      GroupId: !GetAtt DBInstanceSecurityGroup.GroupId
+          
+  DBInstanceSecurityInboundRule:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      IpProtocol: tcp
+      FromPort: 0
+      ToPort: 65535
+      CidrIp: 31.17.125.68/22
+      GroupId: !GetAtt DBInstanceSecurityGroup.GroupId
+  
+  RDSCustomKMSKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: KMS Key to encrypt RDS Custom Instances
+      Enabled: true
+      EnableKeyRotation: true
+      PendingWindowInDays: 30
+      KeyPolicy:
+        Version: '2012-10-17'
+        Id: key-default-1
+        Statement:
+          - Sid: Enable IAM User Permissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action: 
+              - kms:*
+            Resource: '*'
+      KeySpec: SYMMETRIC_DEFAULT
+      KeyUsage: ENCRYPT_DECRYPT
+      MultiRegion: false
+
+  RDSCustomKMSKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName:
+        Fn::Sub: alias/${AWS::StackName}-kms-key
+      TargetKeyId: !Ref RDSCustomKMSKey
+    DependsOn: RDSCustomKMSKey
+
+  RDSCustomSQLServerInstanceServiceRole:
+    DependsOn: RDSCustomKMSKey
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "AWSRDSCustom-${AWS::StackName}-${AWS::Region}"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+      Path: "/"
+      Policies:
+        - PolicyName: AWSRDSCustomEc2InstanceRolePolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ssmAgent1
+                Effect: Allow
+                Action:
+                  - ssm:GetDeployablePatchSnapshotForInstance
+                  - ssm:ListAssociations
+                  - ssm:PutInventory
+                  - ssm:PutConfigurePackageResult
+                  - ssm:UpdateInstanceInformation
+                  - ssm:GetManifest
+                Resource: "*"
+              - Sid: ssmAgent2
+                Effect: Allow
+                Action:
+                  - ssm:ListInstanceAssociations
+                  - ssm:PutComplianceItems
+                  - ssm:UpdateAssociationStatus
+                  - ssm:DescribeAssociation
+                  - ssm:UpdateInstanceAssociationStatus
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/*"
+                Condition:
+                  StringLike:
+                    aws:ResourceTag/AWSRDSCustom: "custom-sqlserver"
+              - Sid: ssmAgent3
+                Effect: Allow
+                Action:
+                  - ssm:UpdateAssociationStatus
+                  - ssm:DescribeAssociation
+                  - ssm:GetDocument
+                  - ssm:DescribeDocument
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:ssm:*:*:document/*"
+              - Sid: ssmAgent4
+                Effect: Allow
+                Action:
+                  - ssmmessages:CreateControlChannel
+                  - ssmmessages:CreateDataChannel
+                  - ssmmessages:OpenControlChannel
+                  - ssmmessages:OpenDataChannel
+                Resource: "*"
+              - Sid: ssmAgent5
+                Effect: Allow
+                Action:
+                  - ec2messages:AcknowledgeMessage
+                  - ec2messages:DeleteMessage
+                  - ec2messages:FailMessage
+                  - ec2messages:GetEndpoint
+                  - ec2messages:GetMessages
+                  - ec2messages:SendReply
+                Resource: "*"
+              - Sid: ssmAgent6
+                Effect: Allow
+                Action:
+                  - ssm:GetParameters
+                  - ssm:GetParameter
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:ssm:*:*:parameter/*"
+              - Sid: ssmAgent7
+                Effect: Allow
+                Action:
+                  - ssm:UpdateInstanceAssociationStatus
+                  - ssm:DescribeAssociation
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:ssm:*:*:association/*"
+              - Sid: eccSnapshot1
+                Effect: Allow
+                Action: ec2:CreateSnapshot
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:volume/*"
+                Condition:
+                  StringLike:
+                    aws:ResourceTag/AWSRDSCustom: "custom-sqlserver"
+              - Sid: eccSnapshot2
+                Effect: Allow
+                Action: ec2:CreateSnapshot
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}::snapshot/*"
+                Condition:
+                  StringLike:
+                    aws:RequestTag/AWSRDSCustom: "custom-sqlserver"
+              - Sid: eccCreateTag
+                Effect: Allow
+                Action: ec2:CreateTags
+                Resource: "*"
+                Condition:
+                  StringLike:
+                    aws:RequestTag/AWSRDSCustom: "custom-sqlserver"
+                    ec2:CreateAction:
+                      - "CreateSnapshot"
+              - Sid: s3BucketAccess
+                Effect: Allow
+                Action:
+                  - s3:putObject
+                  - s3:getObject
+                  - s3:getObjectVersion
+                  - s3:AbortMultipartUpload
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:s3:::do-not-delete-rds-custom-*/*"
+              - Sid: customerCMKEncryption
+                Effect: Allow
+                Action:
+                  - kms:Decrypt
+                  - kms:GenerateDataKey*
+                Resource:
+                  - !GetAtt RDSCustomKMSKey.Arn
+              - Sid: readSecretsFromCP
+                Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:DescribeSecret
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:do-not-delete-rds-custom-*"
+                Condition:
+                  StringLike:
+                    aws:ResourceTag/AWSRDSCustom: "custom-sqlserver"
+              - Sid: publishCWMetrics
+                Effect: Allow
+                Action: cloudwatch:PutMetricData
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: "rdscustom/rds-custom-sqlserver-agent"
+              - Sid: putEventsToEventBus
+                Effect: Allow
+                Action: events:PutEvents
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:event-bus/default"
+              - Sid: cwlOperations1
+                Effect: Allow
+                Action:
+                  - logs:PutRetentionPolicy
+                  - logs:PutLogEvents
+                  - logs:DescribeLogStreams
+                  - logs:CreateLogStream
+                  - logs:CreateLogGroup
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:rds-custom-instance-*"
+              - Sid: cwlOperations2
+                Effect: Allow
+                Action: logs:DescribeLogGroups
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:*"
+              - Sid: SendMessageToSQSQueue
+                Effect: Allow
+                Action:
+                  - SQS:SendMessage
+                  - SQS:ReceiveMessage
+                  - SQS:DeleteMessage
+                  - SQS:GetQueueUrl
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:sqs:${AWS::Region}:${AWS::AccountId}:do-not-delete-rds-custom-*"
+                Condition:
+                  StringLike:
+                    aws:ResourceTag/AWSRDSCustom: "custom-sqlserver"
+
+  RDSCustomSQLServerInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub "AWSRDSCustom-${AWS::StackName}-${AWS::Region}"
+      Path: "/"
+      Roles:
+        - !Ref RDSCustomSQLServerInstanceServiceRole
+    DependsOn: RDSCustomSQLServerInstanceServiceRole
+
+
+  
