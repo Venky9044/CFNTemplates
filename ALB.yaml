@@ -8,6 +8,16 @@ Parameters:
     Type: AWS::EC2::Subnet::Id
   Subnet2Id:
     Type: AWS::EC2::Subnet::Id
+  CidrIp1:
+    Type: String
+    Description: Provide the ip address of first instance in '/32' format
+  CidrIp2:
+    Type: String
+    Description: Provide the ip address of second instance in '/32' format
+  InstanceIpAddress1:
+    Type: String
+  InstanceIpAddress2:
+    Type: String
 
 Resources:
   AlbSecurityGroup:
@@ -19,11 +29,11 @@ Resources:
         - IpProtocol: tcp
           FromPort: 443
           ToPort: 443
-          CidrIp: ''
+          CidrIp: !Ref Cidrip1
         - IpProtocol: tcp
           FromPort: 443
           ToPort: 443
-          CidrIp: ''
+          CidrIp1: !Ref CidrIp2
 
   ALB:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
@@ -59,7 +69,7 @@ Resources:
       VpcId: !Ref VpcId
       TargetType: 'ip'
       Targets:
-        - Id: '<ip address of ec2 instance'
+        - Id: !Ref InstanceIpAddress1
           Port: 443
 
   TargetGroup2:
@@ -71,5 +81,5 @@ Resources:
       VpcId: !Ref VpcId
       TargetType: 'ip'
       Targets:
-        - Id: '<ip address of ec2 instance'
+        - Id: !Ref InstanceIpAddress2
           Port: 443
