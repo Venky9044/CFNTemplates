@@ -1,0 +1,75 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Default: 
+  Subnet1Id:
+    Type: AWS::EC2::Subnet::Id
+  Subnet2Id:
+    Type: AWS::EC2::Subnet::Id
+
+Resources:
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for the ALB
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: ''
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: ''
+
+  ALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: ALB
+      Subnets:
+        - !Ref Subnet1Id
+        - !Ref Subnet2Id
+      Scheme: internal
+      SecurityGroups:
+        - !Ref AlbSecurityGroup
+    DependsOn:
+      - ListenerHTTPS
+
+  ListenerHTTPS:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup1
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup2
+      LoadBalancerArn: !Ref ALB
+      Port: 443
+      Protocol: HTTPS
+
+  TargetGroup1:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: TargetGroup1
+      Port: 443
+      Protocol: HTTPS
+      VpcId: !Ref VpcId
+      TargetType: 'ip'
+      Targets:
+        - Id: '<ip address of ec2 instance'
+          Port: 443
+
+  TargetGroup2:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: TargetGroup2
+      Port: 443
+      Protocol: HTTPS
+      VpcId: !Ref VpcId
+      TargetType: 'ip'
+      Targets:
+        - Id: '<ip address of ec2 instance'
+          Port: 443
