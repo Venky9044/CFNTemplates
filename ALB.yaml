@@ -18,6 +18,12 @@ Parameters:
     Type: String
   InstanceIpAddress2:
     Type: String
+  TagApplicationName:
+    Type: String
+  TagApplicationOwner:
+    Type: String
+  TagCriticality:
+    Type: String
 
 Resources:
   AlbSecurityGroup:
@@ -45,8 +51,10 @@ Resources:
       Scheme: internal
       SecurityGroups:
         - !Ref AlbSecurityGroup
-    DependsOn:
-      - ListenerHTTPS
+    Tags:
+      TagApplicationName: !Ref TagApplicationName
+      TagApplicationOwner: !Ref TagApplicationOwner
+      TagCriticality: !Ref TagCriticality
 
   ListenerHTTPS:
     Type: AWS::ElasticLoadBalancingV2::Listener
