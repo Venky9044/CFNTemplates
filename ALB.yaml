@@ -3,26 +3,41 @@ AWSTemplateFormatVersion: '2010-09-09'
 Parameters:
   VpcId:
     Type: AWS::EC2::VPC::Id
-    Default: 
+
   Subnet1Id:
     Type: AWS::EC2::Subnet::Id
+
   Subnet2Id:
     Type: AWS::EC2::Subnet::Id
+
   CidrIp1:
     Type: String
-    Description: Provide the ip address of first instance in '/32' format
+
   CidrIp2:
     Type: String
-    Description: Provide the ip address of second instance in '/32' format
+
+  CidrIp3:
+    Type: String
+  
+  CidrIp4:
+    Type: String
+
   InstanceIpAddress1:
     Type: String
+
   InstanceIpAddress2:
     Type: String
+  
   TagApplicationName:
     Type: String
+ 
   TagApplicationOwner:
     Type: String
+ 
   TagCriticality:
+    Type: String
+
+  Certificate:
     Type: String
 
 Resources:
@@ -35,11 +50,20 @@ Resources:
         - IpProtocol: tcp
           FromPort: 443
           ToPort: 443
-          CidrIp: !Ref Cidrip1
+          CidrIp: !Ref CidrIp1
         - IpProtocol: tcp
           FromPort: 443
           ToPort: 443
-          CidrIp1: !Ref CidrIp2
+          CidrIp: !Ref CidrIp2
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: !Ref CidrIp3
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: !Ref CidrIp4
+
 
   ALB:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
@@ -51,27 +75,30 @@ Resources:
       Scheme: internal
       SecurityGroups:
         - !Ref AlbSecurityGroup
-    Tags:
-      TagApplicationName: !Ref TagApplicationName
-      TagApplicationOwner: !Ref TagApplicationOwner
-      TagCriticality: !Ref TagCriticality
+      Tags:
+        - Key: TagApplicationName
+          Value: !Ref TagApplicationName
+        - Key: TagApplicationOwner
+          Value: !Ref TagApplicationOwner
+        - Key: TagCriticality
+          Value: !Ref TagCriticality
 
   ListenerHTTPS:
     Type: AWS::ElasticLoadBalancingV2::Listener
     Properties:
       DefaultActions:
         - Type: forward
-          TargetGroupArn: !Ref TargetGroup1
-        - Type: forward
-          TargetGroupArn: !Ref TargetGroup2
+          TargetGroupArn: !Ref TargetGroup
+      Certificates:
+        - !Ref Certificate
       LoadBalancerArn: !Ref ALB
       Port: 443
       Protocol: HTTPS
 
-  TargetGroup1:
+  TargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
-      Name: TargetGroup1
+      Name: TargetGroup
       Port: 443
       Protocol: HTTPS
       VpcId: !Ref VpcId
@@ -79,15 +106,5 @@ Resources:
       Targets:
         - Id: !Ref InstanceIpAddress1
           Port: 443
-
-  TargetGroup2:
-    Type: AWS::ElasticLoadBalancingV2::TargetGroup
-    Properties:
-      Name: TargetGroup2
-      Port: 443
-      Protocol: HTTPS
-      VpcId: !Ref VpcId
-      TargetType: 'ip'
-      Targets:
         - Id: !Ref InstanceIpAddress2
           Port: 443
