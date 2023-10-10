@@ -1,11 +1,11 @@
 Parameters:
   EmailAddress1:
     Type: String
-    Default: 'venkatesh.s.soma@gmail.com'
+    Default: ''
 
   EmailAddress2:
     Type: String
-    Default: 'santosh.gupta191@gmail.com'
+    Default: ''
 
 Resources:
 
