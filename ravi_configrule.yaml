@@ -1,9 +1,11 @@
 Parameters:
   EmailAddress1:
     Type: String
+    Default: 'venkatesh.s.soma@gmail.com'
 
   EmailAddress2:
     Type: String
+    Default: 'santosh.gupta191@gmail.com'
 
 Resources:
 
@@ -25,57 +27,59 @@ Resources:
       Protocol: email
       TopicArn: !Ref SNSTopic
       Endpoint: !Ref EmailAddress2
-  
-  ConfigRole:
-    Type: AWS::IAM::Role
+
+  ConfigRoleRavi:
+    Type: 'AWS::IAM::Role'
     Properties:
-      RoleName: AWSConfigRole
+      RoleName: AWSConfigRoleRavi
       AssumeRolePolicyDocument:
-        Version: '2012-10-17'
+        Version: 2012-10-17
         Statement:
           - Effect: Allow
             Principal:
               Service:
                 - config.amazonaws.com
-            Action: sts:AssumeRole
+            Action: 'sts:AssumeRole'
       Policies:
         - PolicyName: SecurityGroupPolicy
           PolicyDocument:
-            Version: '2012-10-17'
+            Version: 2012-10-17
             Statement:
               - Effect: Allow
                 Action:
-                  - ec2:DescribeSecurityGroups
-                  - ec2:DescribeNetworkInterfaces
+                  - 'ec2:DescribeSecurityGroups'
+                  - 'ec2:DescribeNetworkInterfaces'
                 Resource: '*'
         - PolicyName: SSMPolicy
           PolicyDocument:
-            Version: '2012-10-17'
+            Version: 2012-10-17
             Statement:
               - Effect: Allow
                 Action:
-                  - ssm:*
+                  - 'ssm:*'
                 Resource: '*'
 
-  AWSConfigRule:
-    Type: AWS::Config::ConfigRule
+  AWSConfigRuleRavi:
+    Type: 'AWS::Config::ConfigRule'
     Properties:
-      ConfigRuleName: restricted-common-ports
-      Description: Checks whether the security group of EC2 instances allows unrestricted incoming TCP traffic to the specified ports.
+      ConfigRuleName: restricted-common-ports-ravi
+      Description: >-
+        Checks whether the security group of EC2 instances allows unrestricted
+        incoming TCP traffic to the specified ports.
       Scope:
         ComplianceResourceTypes:
-          - AWS::EC2::SecurityGroup
+          - 'AWS::EC2::SecurityGroup'
       Source:
         Owner: AWS
         SourceIdentifier: RESTRICTED_INCOMING_TRAFFIC
       InputParameters:
-        blockedPort1: "22"
-        blockedPort2: "3389"
-      
+        blockedPort1: '22'
+        blockedPort2: '3389'
+
   RemediationConfigurations:
-    Type: AWS::Config::RemediationConfiguration
+    Type: 'AWS::Config::RemediationConfiguration'
     Properties:
-      ConfigRuleName: !Ref AWSConfigRule
+      ConfigRuleName: !Ref AWSConfigRuleRavi
       TargetType: SSM_DOCUMENT
       TargetId: AWS-DisablePublicAccessForSecurityGroup
       TargetVersion: $LATEST
@@ -83,20 +87,19 @@ Resources:
         AutomationAssumeRole:
           StaticValue:
             Values:
-              - !GetAtt ConfigRole.Arn
+              - !GetAtt ConfigRoleRavi.Arn
         GroupId:
-          StaticValue:
-            Values: 
-              - RESOURCE_ID
+          ResourceValue:
+            Value: "RESOURCE_ID"
         IpProtocol:
           StaticValue:
             Values:
-              - "-1"
+              - '-1'
         CidrBlock:
           StaticValue:
             Values:
-              - "0.0.0.0/0"
-      ResourceType: AWS::EC2::SecurityGroup
+              - 0.0.0.0/0
+      ResourceType: 'AWS::EC2::SecurityGroup'
       Automatic: true
       MaximumAutomaticAttempts: 10
       RetryAttemptSeconds: 60
@@ -114,7 +117,7 @@ Resources:
           MessageType:
             - ComplianceChangeNotification
           ConfigRuleName:
-            - !Ref AWSConfigRule
+            - !Ref AWSConfigRuleRavi
       State: ENABLED
       Targets:
         - Arn: !Ref SNSTopic
