@@ -15,13 +15,6 @@ Resources:
     Properties:
       DisplayName: SNS-Topic-For-Block-Open-SG-Alerts
 
-  # EmailSubscription1:
-  #   Type: AWS::SNS::Subscription
-  #   Properties:
-  #     Protocol: email
-  #     TopicArn: !Ref SNSTopic
-  #     Endpoint: !Ref EmailAddress1
-
   EmailSubscription2:
     DependsOn: SNSTopic
     Type: AWS::SNS::Subscription
