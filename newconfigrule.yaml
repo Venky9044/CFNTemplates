@@ -1,81 +1,86 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'AWS config deployment to alert and auto-remediate security groups that contain open rules via ports 22 and 3389'
+
 Parameters:
-  EmailAddress1:
-    Type: String
 
   EmailAddress2:
     Type: String
+    Default: ''
 
 Resources:
 
   SNSTopic:
     Type: AWS::SNS::Topic
     Properties:
-      DisplayName: SNS-Topic-For-Config-Rule-Alerts
+      DisplayName: SNS-Topic-For-Block-Open-SG-Alerts
 
-  EmailSubscription1:
-    Type: AWS::SNS::Subscription
-    Properties:
-      Protocol: email
-      TopicArn: !Ref SNSTopic
-      Endpoint: !Ref EmailAddress1
+  # EmailSubscription1:
+  #   Type: AWS::SNS::Subscription
+  #   Properties:
+  #     Protocol: email
+  #     TopicArn: !Ref SNSTopic
+  #     Endpoint: !Ref EmailAddress1
 
   EmailSubscription2:
+    DependsOn: SNSTopic
     Type: AWS::SNS::Subscription
     Properties:
       Protocol: email
       TopicArn: !Ref SNSTopic
       Endpoint: !Ref EmailAddress2
-  
-  ConfigRole:
-    Type: AWS::IAM::Role
+
+  ConfigRoleBlockOpenSG:
+    Type: 'AWS::IAM::Role'
     Properties:
-      RoleName: AWSConfigRole
+      RoleName: ConfigRoleBlockOpenSG
       AssumeRolePolicyDocument:
-        Version: '2012-10-17'
+        Version: 2012-10-17
         Statement:
           - Effect: Allow
             Principal:
               Service:
                 - config.amazonaws.com
-            Action: sts:AssumeRole
+            Action: 'sts:AssumeRole'
       Policies:
         - PolicyName: SecurityGroupPolicy
           PolicyDocument:
-            Version: '2012-10-17'
+            Version: 2012-10-17
             Statement:
               - Effect: Allow
                 Action:
-                  - ec2:DescribeSecurityGroups
-                  - ec2:DescribeNetworkInterfaces
+                  - 'ec2:*'
                 Resource: '*'
         - PolicyName: SSMPolicy
           PolicyDocument:
-            Version: '2012-10-17'
+            Version: 2012-10-17
             Statement:
               - Effect: Allow
                 Action:
-                  - ssm:*
+                  - 'ssm:*'
                 Resource: '*'
 
-  AWSConfigRule:
-    Type: AWS::Config::ConfigRule
+  ConfigRuleBlockOpenSG:
+    Type: 'AWS::Config::ConfigRule'
     Properties:
-      ConfigRuleName: restricted-common-ports
-      Description: Checks whether the security group of EC2 instances allows unrestricted incoming TCP traffic to the specified ports.
+      ConfigRuleName: Block-Open-SSH-RDP
+      Description: >-
+        Checks whether the security group of EC2 instances allows unrestricted
+        incoming TCP traffic to the specified ports.
       Scope:
         ComplianceResourceTypes:
-          - AWS::EC2::SecurityGroup
+          - 'AWS::EC2::SecurityGroup'
       Source:
         Owner: AWS
         SourceIdentifier: RESTRICTED_INCOMING_TRAFFIC
       InputParameters:
-        blockedPort1: "22"
-        blockedPort2: "3389"
-      
+        blockedPort1: '22'
+        blockedPort2: '3389'
+
   RemediationConfigurations:
-    Type: AWS::Config::RemediationConfiguration
+    Type: 'AWS::Config::RemediationConfiguration'
     Properties:
-      ConfigRuleName: !Ref AWSConfigRule
+      ConfigRuleName: !Ref ConfigRuleBlockOpenSG
       TargetType: SSM_DOCUMENT
       TargetId: AWS-DisablePublicAccessForSecurityGroup
       TargetVersion: $LATEST
@@ -83,26 +88,26 @@ Resources:
         AutomationAssumeRole:
           StaticValue:
             Values:
-              - !GetAtt ConfigRole.Arn
+              - !GetAtt ConfigRoleBlockOpenSG.Arn
         GroupId:
-          StaticValue:
-            Values: 
-              - RESOURCE_ID
-        IpProtocol:
-          StaticValue:
-            Values:
-              - "-1"
-        CidrBlock:
-          StaticValue:
-            Values:
-              - "0.0.0.0/0"
-      ResourceType: AWS::EC2::SecurityGroup
+          ResourceValue:
+            Value: "RESOURCE_ID"
+        # IpProtocol:
+        #   StaticValue:
+        #     Values:
+        #       - '-1'
+        # CidrBlock:
+        #   StaticValue:
+        #     Values:
+        #       - 0.0.0.0/0
+      ResourceType: 'AWS::EC2::SecurityGroup'
       Automatic: true
       MaximumAutomaticAttempts: 10
       RetryAttemptSeconds: 60
 
   ConfigRuleCloudWatchEvent:
     Type: AWS::Events::Rule
+    DependsOn: SNSTopic
     Properties:
       Description: CloudWatch Events rule to trigger AWS Config rule evaluation.
       EventPattern:
@@ -111,10 +116,10 @@ Resources:
         detail-type:
           - Config Rules Compliance Change
         detail:
-          MessageType:
+          messageType:
             - ComplianceChangeNotification
-          ConfigRuleName:
-            - !Ref AWSConfigRule
+          configRuleName:
+            - !Ref ConfigRuleBlockOpenSG
       State: ENABLED
       Targets:
         - Arn: !Ref SNSTopic
@@ -125,4 +130,4 @@ Resources:
               "complianceType": "$.detail.newEvaluationResult.complianceType"
               "resourceId": "$.detail.resourceId"
             InputTemplate: |
-              "The resource <resourceId> in region <awsRegion> had an inbound rule open to internet for port 22/3389 and is being automatically removed as per security guidelines"
+              "The resource <resourceId> in region <awsRegion> had an inbound rule open to internet for port 22/3389 and is being automatically removed as per security guidelines"

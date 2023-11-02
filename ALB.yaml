@@ -108,3 +108,88 @@ Resources:
           Port: 443
         - Id: !Ref InstanceIpAddress2
           Port: 443
+
+  WebACL:
+    Type: AWS::WAFv2::WebACL
+    Properties:
+      Name: Testing
+      Scope: REGIONAL
+      DefaultAction:
+        Allow: {}
+      Description: WebACL for Admin Protection, Core Rule Set, Known Bad Inputs, Linux OS, and PHP Application
+      VisibilityConfig:
+        SampledRequestsEnabled: true
+        CloudWatchMetricsEnabled: true
+        MetricName: exampleWebACL
+      Rules:
+        - Name: AdminProtection
+          OverrideAction:
+            Count: {}
+          Priority: 1
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesAdminProtectionRuleSet
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: AWSManagedRulesAdminProtectionRuleSet
+        - Name: CoreRuleSet
+          OverrideAction:
+            Count: {}
+          Priority: 2
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesCommonRuleSet
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: AWSManagedRulesCommonRuleSet
+        - Name: KnownBadInputs
+          OverrideAction:
+            Count: {}
+          Priority: 3
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesKnownBadInputsRuleSet
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: AWSManagedRulesKnownBadInputsRuleSet
+        - Name: LinuxOS
+          OverrideAction:
+            Count: {}
+          Priority: 4
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesLinuxRuleSet
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: AWSManagedRulesLinuxRuleSet
+        - Name: PHPApplication
+          OverrideAction:
+            Count: {}
+          Priority: 5
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesPHPRuleSet
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: AWSManagedRulesPHPRuleSet
+
+  WebACLAssociation:
+    Type: AWS::WAFv2::WebACLAssociation
+    Properties:
+      WebACLArn: !GetAtt WebACL.Arn
+      ResourceArn: arn:aws:elasticloadbalancing:eu-central-1:294733675736:loadbalancer/app/Testing-ALB/df01a8dacdf87dc5
+
+Outputs:
+  WebACLId:
+    Description: WebACL Id
+    Value: !Ref WebACL
