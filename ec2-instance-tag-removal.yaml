@@ -1,0 +1,101 @@
+Resources:
+
+  EventsPermissionToCallLambda: 
+    Type: AWS::Lambda::Permission
+    Properties: 
+      FunctionName: 
+        Fn::GetAtt: 
+           - EC2InstanceTagRemovalLambda
+           - Arn
+      Action: "lambda:InvokeFunction"
+      Principal: "events.amazonaws.com"
+      SourceArn: !GetAtt InstanceTagRemovalCloudWatchEvent.Arn
+
+  EC2InstanceTagRemovalLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: EC2InstanceTagRemovalLambda
+      Runtime: python3.12
+      Handler: index.lambda_handler
+      Timeout: 60
+      Role: !GetAtt EC2InstanceTagRemovalLambdaRole.Arn
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+
+          def lambda_handler(event, context):
+              ec2 = boto3.client('ec2')  
+
+              instance_id = event['detail']['instance-id']
+              print(f'{instance_id}')
+              response          = ec2.describe_instances(InstanceIds=[instance_id])
+              availability_zone = response['Reservations'][0]['Instances'][0]['Placement']['AvailabilityZone'] 
+              print(f'{availability_zone}')
+
+              # Check if instance is in the target AZ
+              if availability_zone == 'ap-southeast-2c':  
+                  tags_to_remove = ['OperationalHours']  # Tags to remove
+
+                  try:
+                      response = ec2.describe_tags(Filters=[{'Name': 'resource-id', 'Values': [instance_id]}])
+                      existing_tags = {t['Key']: t['Value'] for t in response['Tags']}
+
+                      for tag in tags_to_remove:
+                          if tag in existing_tags:
+                              ec2.delete_tags(Resources=[instance_id], Tags=[{'Key': tag}])
+                              print(f"Removed tag '{tag}' from instance {instance_id}")
+
+                  except Exception as e:
+                      print(f"Error processing tags: {e}")
+
+  EC2InstanceTagRemovalLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: EC2InstanceTagRemovalLambdaRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: CustomConfigAndSNSPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - events:*
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeTags
+                  - ec2:DeleteTags
+                  - ec2:CreateTags
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeInstances
+                Resource: '*'
+
+  InstanceTagRemovalCloudWatchEvent:
+    Type: AWS::Events::Rule
+    DependsOn: EC2InstanceTagRemovalLambda
+    Properties:
+      Description: CloudWatch Events rule to trigger removal of ec2 instance tags.
+      EventPattern:
+        source:
+          - aws.ec2
+        detail-type:
+          - EC2 Instance State-change Notification
+        detail:
+          state:
+            - running
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt EC2InstanceTagRemovalLambda.Arn
+          Id: "InstanceTagRemovalFunction"
